@@ -11,7 +11,7 @@ For this analysis, we will start by getting the data from GEO, processing it int
 
 These are packages you will need for this notebook. For exact versions used, please refer to the session info at the bottom of this notebook.
 
-```{r, message = FALSE, echo = FALSE}
+```{r, message = FALSE}
 library('tidyverse')
 library('GEOquery')
 library('ggplot2')
@@ -19,6 +19,8 @@ library('RColorBrewer')
 library('survival')
 library('survminer')
 ```
+ 
+<br>
 
 I usually set a couple of directories of where to store things, or where I haved stored things I may need. Here, generalDatasets is just where I have stored more global data, such as a general use database. The baseWorkspace is where I will store my coding files that will usually end up getting pushed to GitHub. The last is baseRepository, this is set up the same as baseWorkspace, but is not pushed to GitHub, so will store larger files for me (such as the data we downloda from GEO).
 
@@ -40,6 +42,8 @@ esArrayData = getGEO('GSE17679',
 esData = esArrayData[[1]]
 ```
 
+<div style="margin-bottom:50px;"></div>
+
 We now have an 'expressionSet' that contains different types of information. We can look at some of the data to see what we have using different commands. Below, pData gives us the 'phenotype data' - this is usually the sample details provided by the submitter and is often where the clinical information is found. The exprs gives us the expression data for each sample analyzed and all probes. The fData will give us 'feature data', which is usually related to the array itself, so things like probe identifiers and annotation. We can take a quick look.
 
 ```{r}
@@ -48,6 +52,8 @@ head(pData(esData))
 head(exprs(esData))
 head(fData(esData))
 ```
+
+<div style="margin-bottom:50px;"></div>
 
 First I just want to annotate the expression data to include gene symbols (right now it is just probe identifiers), as these are what I will use for the survival analysis downstream. We can use the feature data to get this annotation. Below, I extract the expression data into the 'esExpression' object. Then, I extract the feature data, keep the first gene symbol in the 'Gene Symbol' column, select only the columns I want to keep with the 'select' function, and then merge it with the esExpression object.
 
@@ -60,6 +66,8 @@ esExpressionAnnotated = as_tibble(fData(esData)) %>%
   dplyr::select(ID, GB_ACC, symbol) %>%
   left_join(esExpression)
 ```
+
+<div style="margin-bottom:50px;"></div>
 
 So now we have an expression object with gene symbols and all of the associated data. Now I want to look at the phenotype data. I think there are a bunch of samples here we don't want, so we should get rid of these. There appears to be PNET cases in here, cell lines, and some other tissues. I will keep only things classified as Ewing. Most of the command below is just text parsing to extract the information I want. This is the purpose of the 'sub' function. I know it can look a bit confusing, but if you want to learn more about it, you should look into regular expressions, or ask here and I can do my best to explain it. In the end, I assign a numerical value to alive and dead, where dead = 2.
 
@@ -78,6 +86,8 @@ esPhenotype = as_tibble(pData(esData)) %>%
 esPhenotype$status = ifelse(esPhenotype$status == 'Dead', 2, 1)
 ```
 
+<div style="margin-bottom:50px;"></div>
+
 Now we can save the two datasets, just in case we want to use them later on for something else and don't want to redo this processing.
 
 ```{r}
@@ -85,6 +95,8 @@ Now we can save the two datasets, just in case we want to use them later on for 
 saveRDS(esExpressionAnnotated, paste(baseRepository, '/getGeoDataForSurvivalAnalysis/dataset_savolaExpression.rds', sep = ''))
 saveRDS(esPhenotype, paste(baseRepository, '/getGeoDataForSurvivalAnalysis/dataset_savolaPhenotype.rds', sep = ''))
 ```
+
+<div style="margin-bottom:50px;"></div>
 
 Now we are ready to move on and do the survival analysis. For simplicity and to avoid messing up my original files, I am first going to read in the data we just save to and start fresh from here with new names.
 
@@ -94,7 +106,9 @@ esExpression = readRDS(paste(baseRepository, '/getGeoDataForSurvivalAnalysis/dat
 esPhenotype = readRDS(paste(baseRepository, '/getGeoDataForSurvivalAnalysis/dataset_savolaPhenotype.rds', sep = ''))
 ```
 
-Now everything is set to do a survival analysis. First, we can just do this simply for a single gene. I find the easiest way to do this is to write a function as we want it to be reproducible if we decide to do it for many genes. For this, I like to create a new .R file, write the function in it, and call it into this session. So, if you are in RStudio, click File>New File>R Script. In my case, I have provided this file on GitHub and it is called 'getGeoDataForSurvivalAnalysisFunctions.R'. You can open this file with any text editor, or RStudio. 
+<div style="margin-bottom:50px;"></div>
+
+Now everything is set to do a survival analysis. First, we can just do this simply for a single gene. I find the easiest way to do this is to write a function as we want it to be reproducible if we decide to do it for many genes. For this, I like to create a new .R file, write the function in it, and call it into this session. So, if you are in RStudio, click File>New File>R Script. In my case, I have provided this file on GitHub and it is called [getGeoDataForSurvivalAnalysisFunctions.R](https://github.com/chrishuges/protocolsDryLab/blob/master/relatedToPublishedData/getGeoDataForSurvivalAnalysisFunctions.R). You can open this file with any text editor, or RStudio. 
 
 In this file, you will find a function called 'survivalAnalysis'. This function will take your gene of interest, your phenotype and expression data, as well as inputs as to whether you would like to generate a plot or not. To call this file into R, we can use the 'source' function and point it at the file.
 
@@ -102,6 +116,8 @@ In this file, you will find a function called 'survivalAnalysis'. This function 
 ##########################################################################################
 source(paste(baseWorkspace, '/getGeoDataForSurvivalAnalysisFunctions.R', sep = ''))
 ```
+
+<div style="margin-bottom:50px;"></div>
 
 Now we can call our function on a gene we are interested in. By default, this function will write plot and text files to our baseRepository directory, by default. The 'writeDirectory' option only allows you to change folders within the baseRepository location. You do not have to specify 'writeDirectory' if the baseRepository is ok for you.
 
@@ -116,6 +132,8 @@ singleSurvival = survivalAnalysis(geneOfInterest = geneOfInterest,
                                 writeDirectory = '/getGeoDataForSurvivalAnalysis')
 ```
 
+<div style="margin-bottom:50px;"></div>
+
 A couple of things of note about this function. For a given input gene, it will first parse the expression data to retain only probes for that gene. Because there are usually many probes for a gene, it ranks them and keeps only the highest expressing probe. After this, the expression values across all patients for this probe are ranked, and the top and bottom 25% of patients are assigned as 'high' and 'low' expression cases. Then, it performs survival analysis based on overall survival using only these high and low expression cases. The plot command tells it whether to output a survival plot, and the data command whether to output the text of the results. The variable assignment here to 'testSurvival' returns the coxZscore for that gene, allowing you to get results for many genes to compare. 
 
 Keep in mind the function expects data in the format as we have it.
@@ -126,6 +144,7 @@ head(esExpression)
 head(esPhenotype)
 ```
 
+<div style="margin-bottom:50px;"></div>
 
 If we want to do a list of a bunch of genes, we can do that as below. Keep in mind that if you feed it 1,000 genes, it will make 1,000 plots and text files, so make sure you write to a directory where you can easily make sense of this if you need to (perhaps a new folder holding just these output files).
 
@@ -139,6 +158,8 @@ multiSurvival = lapply(geneOfInterest, survivalAnalysis,
                        survivalData = TRUE, 
                        writeDirectory = '/getGeoDataForSurvivalAnalysis')
 ```
+
+<div style="margin-bottom:50px;"></div>
 
 This is the end of this document. As a final command, we will run sessionInfo to ensure others who look at our work know exactly how our environment was set up.
 
