@@ -1,6 +1,8 @@
 # Protocols for dry lab experiments <!-- omit in toc -->
 
-Descriptive protocols for different types of dry-lab processes. PDF versions of all protocols are available for download in the same directory where the protocol is found. For protocols with code blocks, the PDF version may have some of the code cut off for long lines, so I suggest you refer to the markdown version in these cases. Some protocols also provide R notebook (Rmd and html) files that you can directly plug in to RStudio if you desire. To download these for use on your own machine, simply click the link to the file and when it opens, hit the 'Raw' button. One the screen that appears right click and hit 'Save as', and save to your own machine with the correct extension for the file you are downloading.
+Descriptive protocols for different types of dry-lab processes. The majority of the files are provided as R notebook html files, for ease of visualization. However, Rmd files are provided for all tutorials that can be downloaded and opened on your own machine to follow along if you would like. To download one of the Rmd files, simply navigate to the top level directory for the protocol you are interested in, click on the Rmd file you would like to download, click the 'Raw' button on the file that appears, and right click and hit 'Save As' on the new page that opens. Save the file as an Rmd file and open in RStudio.
+
+In most of these protocols I use R, but some use Python (sometimes in the same notebook). In these instances, I do my best to detail my choice for one vs. the other, and what I am doing.
 
 ## Quick links <!-- omit in toc -->
 
