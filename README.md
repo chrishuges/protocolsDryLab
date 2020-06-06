@@ -7,7 +7,7 @@ In most of these protocols I use R, but some use Python (sometimes in the same n
 ## Quick links <!-- omit in toc -->
 
 - [Related to Published Data](https://github.com/chrishuges/wetLabProtocols/tree/master/relatedToPublishedData)
-  - [Retrieve array data from GEO and do a survival analysis](https://htmlpreview.github.io/?https://github.com/chrishuges/protocolsDryLab/blob/master/relatedToPublishedData/getGeoDataForSurvivalAnalysis.nb.html)
+  - [Retrieve array data from GEO and do a survival analysis](http://htmlpreview.github.io/?https://github.com/chrishuges/protocolsDryLab/blob/master/relatedToPublishedData/getGeoDataForSurvivalAnalysis.nb.html)
 - [Related to Proteomics](https://github.com/chrishuges/wetLabProtocols/tree/master/relatedToProteomics)
 - [Related to Next Generation Sequencing](https://github.com/chrishuges/wetLabProtocols/tree/master/relatedToNextGenSequencing)
 - [Troubleshooting](#troubleshooting)
