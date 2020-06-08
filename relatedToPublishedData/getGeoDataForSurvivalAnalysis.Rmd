@@ -22,7 +22,7 @@ library('survminer')
  
 <br>
 
-I usually set a couple of directories of where to store things, or where I haved stored things I may need. Here, generalDatasets is just where I have stored more global data, such as a general use database. The baseWorkspace is where I will store my coding files that will usually end up getting pushed to GitHub. The last is baseRepository, this is set up the same as baseWorkspace, but is not pushed to GitHub, so will store larger files for me (such as the data we downloda from GEO).
+I usually set a couple of directories of where to store things, or where I have located things we may need. Below, generalDatasets is just where we have stored more global data, such as a general use database. The baseWorkspace is where we will store my coding files that will usually end up getting pushed to GitHub. The last is baseRepository. This is set up the same as baseWorkspace but is not pushed to GitHub, so will store larger files (such as the data we download from GEO).
 
 ```{r}
 generalDatasets = 'C:/Users/chris/OneDrive/Documents/bccrc/projectsRepository/generalDatasets'
@@ -32,35 +32,67 @@ baseRepository = 'C:/Users/chris/OneDrive/Documents/bccrc/protocolsRepository'
 
 ## Data processing
 
-This data set is from Savola et al. from GSE17679 that was published in PMID 22084725. There appears to be two sets of replicates here, with a bunch of other cell line and other tissue samples analyzed as well that may need filtering downstream. First we will get the data. If you wanted to analyze different data here, replace with your own GEO identifier. The desdir portion of the command here is telling geoGEO where we want to save the data. Here I am using the 'paste' function to combine my baseRepository from above with the name of the folder where I want to save it. The sep = '' just tells it to leave no spaces between the individual elements (it is a file path, we don't want spaces).
+This data set is from Savola et al. from GSE17679 that was published in PMID 22084725. There appears to be two sets of replicates here, with a bunch of other cell line and other tissue samples analyzed as well that may need filtering downstream. If you wanted to analyze different data here, replace with your own GEO identifier. The destdir portion of the command here is telling getGEO where we want to save the data. Here we are using the 'paste' function to combine my baseRepository from above with the name of the folder where we want to save it. The sep = '' just tells it to leave no spaces between the individual elements (it is a file path, we don't want spaces).
 
 ```{r}
 ##########################################################################################
 esArrayData = getGEO('GSE17679',
              destdir = paste(baseRepository, '/getGeoDataForSurvivalAnalysis/', sep = ''),
              GSEMatrix = TRUE)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+This command returns a list like object, so we will extract it to be an expressionSet.
+
+```{r}
+##########################################################################################
 esData = esArrayData[[1]]
 ```
 
 <div style="margin-bottom:50px;"></div>
 
-We now have an 'expressionSet' that contains different types of information. We can look at some of the data to see what we have using different commands. Below, pData gives us the 'phenotype data' - this is usually the sample details provided by the submitter and is often where the clinical information is found. The exprs gives us the expression data for each sample analyzed and all probes. The fData will give us 'feature data', which is usually related to the array itself, so things like probe identifiers and annotation. We can take a quick look.
+We now have an 'expressionSet' that contains different types of information. We can look at some of the data to see what we have using different commands. Below, pData gives us the 'phenotype data' - this is usually the sample details provided by the submitter and is often where the clinical information is found.
 
 ```{r}
-##################################################################################
+##########################################################################################
 head(pData(esData))
-head(exprs(esData))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+The exprs gives us the expression data for each sample analyzed, and all probes. 
+
+```{r}
+##########################################################################################
+head(exprs(esData)[,1:5])
+```
+
+<div style="margin-bottom:50px;"></div>
+
+The fData will give us 'feature data', which is usually related to the array itself, so things like probe identifiers and annotation.
+
+```{r}
+##########################################################################################
 head(fData(esData))
 ```
 
 <div style="margin-bottom:50px;"></div>
 
-First I just want to annotate the expression data to include gene symbols (right now it is just probe identifiers), as these are what I will use for the survival analysis downstream. We can use the feature data to get this annotation. Below, I extract the expression data into the 'esExpression' object. Then, I extract the feature data, keep the first gene symbol in the 'Gene Symbol' column, select only the columns I want to keep with the 'select' function, and then merge it with the esExpression object.
+First we just want to annotate the expression data to include gene symbols (right now it is just probe identifiers), as these are what we will use for the survival analysis downstream. We can use the feature data to get this annotation. Below, we extract the expression data into the 'esExpression' object. 
 
 ```{r}
 ##################################################################################
 esExpression = as_tibble(exprs(esData)) %>%
   mutate(ID = row.names(exprs(esData)))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now, we extract the feature data, keep the first gene symbol in the 'Gene Symbol' column, select only the columns we want to keep with the 'select' function, and then merge it with the esExpression object we just created.
+
+```{r}
+##################################################################################
 esExpressionAnnotated = as_tibble(fData(esData)) %>%
   mutate(symbol = sapply(strsplit(`Gene Symbol`, ' '), '[', 1)) %>%
   dplyr::select(ID, GB_ACC, symbol) %>%
@@ -69,7 +101,7 @@ esExpressionAnnotated = as_tibble(fData(esData)) %>%
 
 <div style="margin-bottom:50px;"></div>
 
-So now we have an expression object with gene symbols and all of the associated data. Now I want to look at the phenotype data. I think there are a bunch of samples here we don't want, so we should get rid of these. There appears to be PNET cases in here, cell lines, and some other tissues. I will keep only things classified as Ewing. Most of the command below is just text parsing to extract the information I want. This is the purpose of the 'sub' function. I know it can look a bit confusing, but if you want to learn more about it, you should look into regular expressions, or ask here and I can do my best to explain it. In the end, I assign a numerical value to alive and dead, where dead = 2.
+So now we have an expression object with gene symbols and all of the associated data. Now I want to look at the phenotype data. There appears to be PNET cases in here, cell lines, and some other tissues. I will keep only things classified as Ewing. Most of the command below is just text parsing to extract the information we want. This is the purpose of the 'sub' function. I know it can look a bit confusing, but if you want to learn more about it, you should look into regular expressions or ask here and I can do my best to explain it.
 
 ```{r}
 ##################################################################################
@@ -83,12 +115,20 @@ esPhenotype = as_tibble(pData(esData)) %>%
   mutate(ovs = as.double(sub('ovs \\(months\\)\\: (.*)$', '\\1', characteristics_ch1.7))) %>%
   mutate(status = sub('status\\: (.*)$', '\\1', characteristics_ch1.8)) %>%
   dplyr::select(geo_accession, type:status)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now we assign a numerical value to alive and dead, where dead = 2.
+
+```{r}
+##################################################################################
 esPhenotype$status = ifelse(esPhenotype$status == 'Dead', 2, 1)
 ```
 
 <div style="margin-bottom:50px;"></div>
 
-Now we can save the two datasets, just in case we want to use them later on for something else and don't want to redo this processing.
+Now we can save the two data sets, just in case we want to use them later on for something else and don't want to redo this processing.
 
 ```{r}
 ##################################################################################
@@ -98,7 +138,7 @@ saveRDS(esPhenotype, paste(baseRepository, '/getGeoDataForSurvivalAnalysis/datas
 
 <div style="margin-bottom:50px;"></div>
 
-Now we are ready to move on and do the survival analysis. For simplicity and to avoid messing up my original files, I am first going to read in the data we just save to and start fresh from here with new names.
+Now we are ready to move on and do the survival analysis. For simplicity and to avoid messing up my original files, I am first going to read in the data we just saved to and start fresh from here with new names.
 
 ```{r}
 ##########################################################################################
@@ -108,9 +148,7 @@ esPhenotype = readRDS(paste(baseRepository, '/getGeoDataForSurvivalAnalysis/data
 
 <div style="margin-bottom:50px;"></div>
 
-Now everything is set to do a survival analysis. First, we can just do this simply for a single gene. I find the easiest way to do this is to write a function as we want it to be reproducible if we decide to do it for many genes. For this, I like to create a new .R file, write the function in it, and call it into this session. So, if you are in RStudio, click File>New File>R Script. In my case, I have provided this file on GitHub and it is called [getGeoDataForSurvivalAnalysisFunctions.R](https://github.com/chrishuges/protocolsDryLab/blob/master/relatedToPublishedData/getGeoDataForSurvivalAnalysisFunctions.R). You can open this file with any text editor, or RStudio. 
-
-In this file, you will find a function called 'survivalAnalysis'. This function will take your gene of interest, your phenotype and expression data, as well as inputs as to whether you would like to generate a plot or not. To call this file into R, we can use the 'source' function and point it at the file.
+Now everything is set to do a survival analysis. First, we can just do this simply for a single gene. I find the easiest way to do this is to write a function as we want it to be reproducible if we decide to do it for many genes. For this, I like to create a new .R file, write the function in it, and call it into this session. So, if you are in RStudio, click File>New File>R Script. In my case, I have provided this file on GitHub and it is called [getGeoDataForSurvivalAnalysisFunctions.R](https://github.com/chrishuges/protocolsDryLab/blob/master/relatedToPublishedData/getGeoDataForSurvivalAnalysisFunctions.R). You can open this file with any text editor, or RStudio. So, create the file, and read it in to this R session.
 
 ```{r}
 ##########################################################################################
@@ -119,7 +157,26 @@ source(paste(baseWorkspace, '/getGeoDataForSurvivalAnalysisFunctions.R', sep = '
 
 <div style="margin-bottom:50px;"></div>
 
-Now we can call our function on a gene we are interested in. By default, this function will write plot and text files to our baseRepository directory, by default. The 'writeDirectory' option only allows you to change folders within the baseRepository location. You do not have to specify 'writeDirectory' if the baseRepository is ok for you.
+In this file, you will find a function called 'survivalAnalysis'. This function will take your gene of interest, your phenotype and expression data, as well as inputs as to whether you would like to generate a plot or not. The function expects the data to be in the specific format as we have created here, so be careful of that in your own use. Expression data:
+
+```{r}
+##########################################################################################
+head(esExpression)
+
+```
+
+<div style="margin-bottom:50px;"></div>
+
+And the phenotype data:
+
+```{r}
+##########################################################################################
+head(esPhenotype)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now we can call our function on a gene we are interested in. By default, this function will write plot and text files to our baseRepository directory. The 'writeDirectory' option only allows you to change folders within the baseRepository location. You do not have to specify 'writeDirectory' if the baseRepository is suitable for you.
 
 ```{r, message = FALSE}
 ##########################################################################################
@@ -134,19 +191,15 @@ singleSurvival = survivalAnalysis(geneOfInterest = geneOfInterest,
 
 <div style="margin-bottom:50px;"></div>
 
-A couple of things of note about this function. For a given input gene, it will first parse the expression data to retain only probes for that gene. Because there are usually many probes for a gene, it ranks them and keeps only the highest expressing probe. After this, the expression values across all patients for this probe are ranked, and the top and bottom 25% of patients are assigned as 'high' and 'low' expression cases. Then, it performs survival analysis based on overall survival using only these high and low expression cases. The plot command tells it whether to output a survival plot, and the data command whether to output the text of the results. The variable assignment here to 'testSurvival' returns the coxZscore for that gene, allowing you to get results for many genes to compare. 
+A couple of things of note about how this function operates:
 
-Keep in mind the function expects data in the format as we have it.
+* For a given input gene, it will first parse the expression data to retain only probes for that gene. Because there are usually many probes for a gene, it ranks them and keeps only the highest expressing probe.
+* After this, the expression values across all patients for this probe are ranked, and the top and bottom 25% of patients are assigned as 'high' and 'low' expression cases. 
+* Then, it performs survival analysis based on overall survival using only these high and low expression cases. 
+* The plot command tells it whether to output a survival plot, and the data command whether to output the text of the results. 
+* The variable assignment here to 'testSurvival' returns the coxZscore for that gene, allowing you to get results for many genes to compare. 
 
-```{r}
-##########################################################################################
-head(esExpression)
-head(esPhenotype)
-```
-
-<div style="margin-bottom:50px;"></div>
-
-If we want to do a list of a bunch of genes, we can do that as below. Keep in mind that if you feed it 1,000 genes, it will make 1,000 plots and text files, so make sure you write to a directory where you can easily make sense of this if you need to (perhaps a new folder holding just these output files).
+If we want to do a list of a bunch of genes, we can do that as below. Keep in mind that if you feed it 1,000 genes, it will make 1,000 plots and text files if you tell it to, so make sure you write to a directory where you can easily make sense of this if you need to (perhaps a new folder holding just these output files).
 
 ```{r, message = FALSE}
 ##########################################################################################
