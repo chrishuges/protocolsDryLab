@@ -1,0 +1,191 @@
+---
+title: "Example: analysis of DepMap dependency data"
+output:
+  html_notebook:
+      code_folding: none
+---
+
+This notebook details the retrieval and analysis of CRISPR dependency data from DepMap.
+
+## Setting up the environment
+
+These are packages you will need for this notebook. For exact versions used, please refer to the session info at the bottom of this notebook.
+
+```{r, message = FALSE}
+library('tidyverse')
+library('ggplot2')
+library('RColorBrewer')
+library('vroom')
+```
+ 
+<br>
+
+I usually set a couple of directories of where to store things, or where I have located things we may need. Below, generalDatasets is just where we have stored more global data, such as a general use database. The baseWorkspace is where we will store my coding files that will usually end up getting pushed to GitHub. The last is baseRepository. This is set up the same as baseWorkspace but is not pushed to GitHub, so will store larger files (such as the data we download from GEO).
+
+```{r}
+generalDatasets = 'C:/Users/chris/OneDrive/Documents/bccrc/projectsRepository/generalDatasets'
+baseWorkspace = 'C:/Users/chris/OneDrive/Documents/bccrc/protocolsDryLab/relatedToPublishedData'
+baseRepository = 'C:/Users/chris/OneDrive/Documents/bccrc/protocolsRepository'
+```
+
+## Data processing
+
+The data we are interested in is from [DepMap](https://depmap.org/portal/). Specifically, we want the gene dependency data from the CRISPR screens. To get this, we can go to the [downloads page](https://depmap.org/portal/download/). On the left panel, select 'All Downloads'. Click 'Genetic Dependency'. Click the release you would like to get the data for, in this case we are going to go with the most recent as of the writing of this notebook, DepMap Public 20Q2. The file we want to download is 'Achilles_gene_effect.csv'. I saved this in a named folder in my generalDatasets directory. We can now read it into R.
+
+```{r}
+##########################################################################################
+crispr = vroom(paste(generalDatasets, '/depmap20Q2/Achilles_gene_effect.csv', sep = ''))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Rename the first column as we will need this later.
+
+```{r}
+##########################################################################################
+colnames(crispr)[1] = 'DepMapId'
+head(crispr[,1:5])
+```
+
+<div style="margin-bottom:50px;"></div>
+
+From here, we can already do some basic processing of the data. For example, let's imagine we have a gene we are interested in looking at the dependency values for. We can first select just this column using subsetting based on the gene name. Basically we look for the index of the column that has the gene name that we are looking for, and keep just this one.
+
+```{r}
+##########################################################################################
+crisprGeneSubset = crispr[,c('DepMapId',
+                             colnames(crispr)[which(grepl('YBX1', colnames(crispr)))])]
+colnames(crisprGeneSubset)[2] = 'geneOfInterest'
+crisprGeneSubset$gene = 'YBX1'
+head(crisprGeneSubset)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Probably the most sensible plot for these data is a boxplot, so we can make a quick one.
+
+```{r}
+##########################################################################################
+ggplot(crisprGeneSubset, aes(gene, geneOfInterest)) +
+  geom_boxplot(width = 0.25, size = 1) +
+  labs(x = '', y = 'CERES Dependency Score', title = 'YBX1 gene dependency') +
+  scale_y_continuous(limits = c(-2,0), breaks = seq(-2,0,0.5)) +
+  geom_hline(yintercept = -1, linetype = 'dashed') +
+  theme_classic()
+```
+
+<div style="margin-bottom:50px;"></div>
+
+This doesn't really tell us much other than that our gene is pretty close to the median score for 'essential' genes (= -1). If we add some annotation it may be more informative. To get the annotation info, we can go back to the [downloads page](https://depmap.org/portal/download/), click 'All Downloads', and 'Cellular Models', and 'DepMap Public 20Q2'. The file we are interested in is called 'sample_info.csv'. Download this file to the same directory as the CRISPR data from before. Read this data in to R.
+
+```{r}
+##########################################################################################
+cellAnno = read_csv(paste(generalDatasets, '/depmap20Q2/sample_info.csv', sep = ''))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+We can see this file contains a good amount of annotation information.
+
+```{r}
+##########################################################################################
+colnames(cellAnno)[1] = 'DepMapId'
+head(cellAnno)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Since our CRISPR data is already in a suitable format, we can add this annotation data directly to that data frame.
+
+```{r}
+##########################################################################################
+crisprAnnotated = crispr %>%
+  left_join(cellAnno)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now we can look at our gene of interest again, but this time add some lineage details. First, reshape it as we did before.
+
+```{r}
+##########################################################################################
+crisprGeneSubset = crisprAnnotated[,c('DepMapId', 'lineage', 'lineage_subtype',
+                             colnames(crisprAnnotated)[which(grepl('YBX1', colnames(crisprAnnotated)))])]
+colnames(crisprGeneSubset)[4] = 'geneOfInterest'
+head(crisprGeneSubset)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+We are almost ready to make a plot. We should first look at the lineages and discard any that have too few entries.
+
+```{r}
+##########################################################################################
+table(crisprGeneSubset$lineage)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+So it looks like we probably want to get rid of a few of these lineages, like fibroblast that only has an n of 1. We will keep any lineage with an n greater than 5.
+
+```{r}
+##########################################################################################
+crisprGeneSubset2 = subset(crisprGeneSubset, crisprGeneSubset$lineage %in% names(which(table(crisprGeneSubset$lineage) > 5)))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now we can go ahead and make a plot. The difference here is that we will use the lineage for grouping.
+
+```{r}
+##########################################################################################
+ggplot(crisprGeneSubset2, aes(lineage, geneOfInterest, color = lineage)) +
+  geom_boxplot(width = 0.25, size = 1) +
+  labs(x = '', y = 'CERES Dependency Score', title = 'YBX1 gene dependency') +
+  scale_y_continuous(limits = c(-2,0), breaks = seq(-2,0,0.5)) +
+  geom_hline(yintercept = -1, linetype = 'dashed') +
+  theme_classic() +
+  theme(legend.position = 'none')
+```
+
+<div style="margin-bottom:50px;"></div>
+
+This plot is kind of hard to see anything, so we can make some graphical adjustments.
+
+```{r}
+##########################################################################################
+ggplot(crisprGeneSubset2, aes(reorder(lineage, geneOfInterest, FUN = median), geneOfInterest, color = lineage)) +
+  geom_boxplot(width = 0.25, size = 1) +
+  labs(x = '', y = 'CERES Dependency Score', title = 'YBX1 gene dependency') +
+  scale_y_continuous(limits = c(-2,0), breaks = seq(-2,0,0.5)) +
+  geom_hline(yintercept = -1, linetype = 'dashed') +
+  theme_classic() +
+  theme(legend.position = 'none', axis.text.x = element_text(size = 9, angle = 45, hjust = 1))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+We can also specify the colors to change, if we are interested in the specific lineage, for example, bone. 
+
+```{r}
+##########################################################################################
+boxColors = setNames(c(rep(brewer.pal(8,'Greys')[4], length(unique(crisprGeneSubset2$lineage)) - 1), brewer.pal(8,'Spectral')[1]),
+                      c(unique(crisprGeneSubset2$lineage)[!unique(crisprGeneSubset2$lineage) %in% 'bone'], 'bone'))
+##
+ggplot(crisprGeneSubset2, aes(reorder(lineage, geneOfInterest, FUN = median), geneOfInterest, color = lineage)) +
+  geom_boxplot(width = 0.25, size = 1) +
+  scale_color_manual(values = boxColors) +
+  labs(x = '', y = 'CERES Dependency Score', title = 'YBX1 gene dependency') +
+  scale_y_continuous(limits = c(-2,0), breaks = seq(-2,0,0.5)) +
+  geom_hline(yintercept = -1, linetype = 'dashed') +
+  theme_classic() +
+  theme(legend.position = 'none', axis.text.x = element_text(size = 9, angle = 45, hjust = 1))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+This is the end of this notebook. As a final command, we will run sessionInfo to ensure others who look at our work know exactly how our environment was set up.
+
+```{r}
+sessionInfo()
+```
