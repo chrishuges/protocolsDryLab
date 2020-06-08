@@ -216,8 +216,6 @@ multiSurvival = lapply(geneOfInterest, survivalAnalysis,
 
 This is the end of this document. As a final command, we will run sessionInfo to ensure others who look at our work know exactly how our environment was set up.
 
-## Session info
-
 ```{r}
 sessionInfo()
 ```
