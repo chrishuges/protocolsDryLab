@@ -1,0 +1,229 @@
+---
+title: "Analysis of SP3 PRD proteomics comparison"
+output:
+  html_notebook:
+      code_folding: none
+---
+
+totalProteomeDifferentialExpressionAnalysisUserDefinedFunctions
+
+
+This document details the analysis of proteomics data acquired to compare Qiagen, SP3 PRD, and standard SP3 for global proteomics analysis. The raw MS data were compiled to peptide identifications using SearchGUI and PeptideShaker as detailed elsewhere in this folder.
+
+## Setting up the environment
+
+These are packages you will need for this notebook. For exact versions used, please refer to the session info at the bottom of this notebook.
+
+```{r, message = FALSE, echo = FALSE}
+library('tidyverse')
+library('ggplot2')
+library('RColorBrewer')
+library('vroom')
+library('DEqMS')
+```
+
+<div style="margin-bottom:50px;"></div>
+
+I want to set a base directory that we can use as a link to the directory where we will do most of the work. I use two directories here because the Workspace is what is pushed to GitHub and contains scripts and plot files, but the Repository is where more of the big data is stored that does not get pushed.
+
+```{r}
+generalDatasets = 'C:/Users/chris/OneDrive/Documents/bccrc/projectsRepository/generalDatasets'
+baseWorkspace = 'C:/Users/chris/OneDrive/Documents/bccrc/projectsWorkspace/sorensenLab/relatedToSp3Prd'
+baseRepository = 'C:/Users/chris/OneDrive/Documents/bccrc/projectsRepository/sorensenLab/relatedToSp3Prd'
+```
+
+<div style="margin-bottom:50px;"></div>
+
+We need to call a source file that has some functions we will need. For simplicity and ease of tracking, I make a copy of this file in each directory that I will work in in order to be able to trace the exact one functions that are used, in case I change them and mistakenly don't push it to GitHub.
+
+```{r}
+source(paste(baseWorkspace, '/proteomics20200612_Sp3AllPrepTotalProteome/userDefinedFunctions.R', sep = ''))
+```
+
+## Data processing
+
+I want to process the data using DEqMS. I am following their guide as detailed [here](https://www.bioconductor.org/packages/release/bioc/vignettes/DEqMS/inst/doc/DEqMS-package-vignette.html#quick-start). For this, I think we should add the gene annotation. We have the annotated fasta index, so we can use that.
+
+```{r}
+##########################################################################################
+proteinAnnotation = readRDS(paste(baseRepository, '/proteomics20200612_Sp3AllPrepTotalProteome/uniprotHumanJun2020.fasta.annotated.rds', sep = ''))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now I will read in the peptide search results.
+
+```{r}
+##########################################################################################
+psm = vroom(paste(baseRepository, '/proteomics20200612_Sp3AllPrepTotalProteome/n_10Oct2016_ADROIT_PrepCompare_TMT10_hph_1_Default_PSM_Report.txt', sep = '')) %>%
+  dplyr::select(`Protein(s)`, Sequence, `Modified Sequence`, `Spectrum File`, `Spectrum Scan Number`) %>%
+  mutate(fraction = sub('.*hph_(.*)\\.raw\\.mgf$', '\\1', `Spectrum File`)) %>%
+  mutate(accession = `Protein(s)`) %>%
+  mutate(scan = `Spectrum Scan Number`) %>%
+  mutate(sequence = Sequence) %>%
+  mutate(modSequence = `Modified Sequence`) %>%
+  left_join(proteinAnnotation) %>%
+  dplyr::select(fraction, scan, accession, gene, detectablePeptides, sequence, modSequence)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now we need the quantification data. These are hosted in individual files in the same directory as the above data.
+
+```{r, message = FALSE, warning = FALSE}
+##########################################################################################
+quantFiles = as.list(list.files(paste(baseRepository, '/proteomics20200612_Sp3AllPrepTotalProteome/quantFiles/', sep = ''),
+           pattern = '_Matrix.txt', full.names = TRUE))
+##
+quantDataSet = lapply(quantFiles, combineQuantFiles)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now combine the quant data into a single data frame and with the previously processed PSM data.
+
+```{r}
+##########################################################################################
+allQuantData = do.call('rbind', quantDataSet)
+psmQuant = psm %>%
+  left_join(allQuantData)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now we will filter the expression data to discard any entries where the signal is just too low to be confident in the data. I generally will use a cutoff of a minimum signal of 10 per TMT channel. In this case we have 9 channels, so we will use a sum signal of 90 as a cutoff. Here we also filter out genes that have no assigned gene name as this will cause problems with DEqMS later on. If you don't want to do this, I suggest using 'accession' instead of 'gene' in the DEqMS analysis below.
+
+```{r}
+##########################################################################################
+psmQuant$sampleSignal = rowSums(psmQuant[,c(8:16)])
+psmQuantFiltered = subset(psmQuant, psmQuant$sampleSignal >= 90 & !is.na(psmQuant$gene) & !grepl('-', psmQuant$gene))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+We will also normalize the data to deal with any gross loading differences. We save both the non-normalized data here as well and check the normalization with a plot.
+
+```{r}
+##########################################################################################
+quantInput = psmQuantFiltered[,c(1:16)]
+saveRDS(quantInput, paste(baseRepository, '/proteomics20200612_Sp3AllPrepTotalProteome/dataset_peptideQuantDataPreDEqMS.rds', sep = ''))
+quantInputLog = quantInput[,c(7,4,8:16)]
+quantInputLog[,3:11][quantInputLog[,3:11] == 0] = NA
+quantInputLog[,3:11] = log2(quantInputLog[,3:11])
+quantInputNormalized = medianSweeping(quantInputLog, group_col = 2)
+boxplot(quantInputNormalized, las = 2, ylab = 'log2 ratio', main = 'normalized TMT data')
+```
+
+<div style="margin-bottom:50px;"></div>
+
+The plot is interesting. The SP3 data are tight, but the Qiagen data seem a bit out there. Lets continue with the DEqMS analysis. Now we are almost ready for DEqMS analysis. We need to build our sample table though. The layout of the samples is: 'prd1','prd2','prd3','qia1','qia2','qia3','pro1','pro2','pro3','pool' in a TMT10-plex format (TMT131C is not used).
+
+```{r}
+##########################################################################################
+cond = as.factor(c('prd','prd','prd','qia','qia','qia','sp3','sp3','sp3'))
+design = model.matrix(~0+cond) 
+colnames(design) = gsub("cond","",colnames(design))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now we can build the Limma model.
+
+```{r}
+##########################################################################################
+geneMatrix = as.matrix(quantInputNormalized)
+limmaFit1 = lmFit(geneMatrix, design)
+limmaContrasts = c('qia-sp3','prd-sp3','prd-qia')
+limmaContrastDesign =  makeContrasts(contrasts = limmaContrasts, levels = design)
+limmaFit2 = eBayes(contrasts.fit(limmaFit1, contrasts = limmaContrastDesign))
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now for the actual DEqMS work. We will first
+
+```{r}
+##########################################################################################
+psmCountTable = as.data.frame(table(quantInput$gene))
+rownames(psmCountTable) = psmCountTable$Var1
+limmaFit2$count = psmCountTable[rownames(limmaFit2$coefficients),2]
+limmaFit3 = spectraCounteBayes(limmaFit2)
+head(limmaFit3$coefficients)
+##
+deqmsResults = outputResult(limmaFit3, coef_col = 1) 
+write.table(deqmsResults, 
+            paste(baseRepository, '/proteomics20200612_Sp3AllPrepTotalProteome/dataset_deqmsQia-Sp3.csv', sep = ''),
+            sep = ',', row.names = FALSE, quote = FALSE)
+##
+deqmsResults = outputResult(limmaFit3, coef_col = 2) 
+write.table(deqmsResults, 
+            paste(baseRepository, '/proteomics20200612_Sp3AllPrepTotalProteome/dataset_deqmsPrd-Sp3.csv', sep = ''),
+            sep = ',', row.names = FALSE, quote = FALSE)
+##
+deqmsResults = outputResult(limmaFit3, coef_col = 3) 
+write.table(deqmsResults, 
+            paste(baseRepository, '/proteomics20200612_Sp3AllPrepTotalProteome/dataset_deqmsPrd-Qia.csv', sep = ''),
+            sep = ',', row.names = FALSE, quote = FALSE)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Generate the variance plot to see the DEqMS model for the data.
+
+```{r}
+##########################################################################################
+VarianceBoxplot(limmaFit3, n=20, xlab = 'PSM count', main = 'DEqMS analysis of TMT data')
+```
+
+<div style="margin-bottom:50px;"></div>
+
+This looks as it should. Now let us make a couple of volcano plots to show the data. First we will do this for Qia vs. SP3. 
+
+```{r}
+##########################################################################################
+deqmsResults = outputResult(limmaFit3, coef_col = 1)
+deqmsResults$plotPValue = -log10(deqmsResults$sca.P.Value)
+deqmsResults$pColors = ifelse(deqmsResults$logFC <= -1 & deqmsResults$plotPValue >= 3, brewer.pal(8,'RdBu')[8],
+                              ifelse(deqmsResults$logFC >= 1 & deqmsResults$plotPValue >= 3, brewer.pal(8,'RdBu')[1],
+                                     brewer.pal(8,'Greys')[6]))
+##
+ggplot(deqmsResults, aes(logFC, plotPValue)) +
+  geom_point(size = 1, color = deqmsResults$pColors, alpha = 0.5) +
+  labs(x = 'log2(Qiagen fold change to SP3)', y = '-log10(P-value)', title = 'Qiagen versus SP3 protein abundance') +
+  scale_y_continuous(limits = c(0,12), breaks = seq(0,18,3)) +
+  geom_vline(xintercept = c(-1,1), linetype = 'dashed') +
+  geom_hline(yintercept = 3, linetype = 'dashed') +
+  theme_classic()
+ggsave(paste(baseRepository, '/proteomics20200612_Sp3AllPrepTotalProteome/scatter_deqmsQia-Sp3.pdf', sep = ''),
+       height = 4, width = 4, useDingbats = FALSE)
+```
+
+<div style="margin-bottom:50px;"></div>
+
+Now for PRD vs. SP3. 
+
+```{r}
+##########################################################################################
+deqmsResults = outputResult(limmaFit3, coef_col = 2)
+deqmsResults$plotPValue = -log10(deqmsResults$sca.P.Value)
+deqmsResults$pColors = ifelse(deqmsResults$logFC <= -1 & deqmsResults$plotPValue >= 3, brewer.pal(8,'RdBu')[8],
+                              ifelse(deqmsResults$logFC >= 1 & deqmsResults$plotPValue >= 3, brewer.pal(8,'RdBu')[1],
+                                     brewer.pal(8,'Greys')[6]))
+##
+ggplot(deqmsResults, aes(logFC, plotPValue)) +
+  geom_point(size = 1, color = deqmsResults$pColors, alpha = 0.5) +
+  labs(x = 'log2(PRD fold change to SP3)', y = '-log10(P-value)', title = 'PRD versus SP3 protein abundance') +
+  scale_y_continuous(limits = c(0,12), breaks = seq(0,18,3)) +
+  geom_vline(xintercept = c(-1,1), linetype = 'dashed') +
+  geom_hline(yintercept = 3, linetype = 'dashed') +
+  theme_classic()
+ggsave(paste(baseRepository, '/proteomics20200612_Sp3AllPrepTotalProteome/scatter_deqmsPrd-Sp3.pdf', sep = ''),
+       height = 4, width = 4, useDingbats = FALSE)
+```
+
+
+## Session info
+
+```{r}
+sessionInfo()
+```
