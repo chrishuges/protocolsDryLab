@@ -7,11 +7,13 @@ output:
 
 This document details a differential expression analysis of total proteome data acquired using a TMT-MS approach with SPS-MS3 on an Orbitrap Fusion Lumos. This document begins with the processing of peptide identification search results that were obtained using the procedure outlined in the document found [here](https://github.com/chrishuges/protocolsDryLab/blob/master/relatedToProteomics/totalProteomeDifferentialExpressionAnalysisRawMsDataProcessing.md).
 
+<div style="margin-bottom:50px;"></div>
+
 ## Setting up the environment
 
 These are packages you will need for this notebook. For exact versions used, please refer to the session info at the bottom of this notebook.
 
-```{r, message = FALSE, echo = FALSE}
+```{r, message = FALSE}
 library('tidyverse')
 library('ggplot2')
 library('RColorBrewer')
@@ -44,6 +46,8 @@ The last thing we want to get is our annotated fasta index. If you followed the 
 ##########################################################################################
 proteinAnnotation = readRDS(paste(baseRepository, '/uniprotHumanJun2020.fasta.annotated.rds', sep = ''))
 ```
+
+<div style="margin-bottom:50px;"></div>
 
 ## Data processing
 
